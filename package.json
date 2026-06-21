@@ -1,0 +1,22 @@
+{
+  "name": "kowalskipm",
+  "version": "1.2.0",
+  "description": "KowalskiPM - Tabs Resources Manager: real-time per-tab memory usage and management, surfaced in a toolbar popup.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --config vite.config.popup.js",
+    "build": "vite build --config vite.config.background.js && vite build --config vite.config.popup.js && node scripts/postbuild.js",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@fontsource/inter": "^5.2.8",
+    "@fontsource/space-grotesk": "^5.2.10",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^5.4.11"
+  }
+}
