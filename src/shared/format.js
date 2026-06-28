@@ -23,7 +23,6 @@ export function formatBadge(bytes) {
   if (!bytes || bytes <= 0) return "0";
   if (bytes >= GB) {
     const gb = bytes / GB;
-    // Keep it to at most 3 characters where possible: "2.1G", "12G".
     return gb >= 10 ? `${Math.round(gb)}G` : `${gb.toFixed(1)}G`;
   }
   const mb = bytes / MB;

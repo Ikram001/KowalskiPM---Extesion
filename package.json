@@ -1,7 +1,7 @@
 {
-  "name": "kowalskipm",
-  "version": "1.2.0",
-  "description": "KowalskiPM - Tabs Resources Manager: real-time per-tab memory usage and management, surfaced in a toolbar popup.",
+  "name": "kowalskipm-quickswitch",
+  "version": "2.0.0",
+  "description": "KowalskiPM + QuickSwitch — real-time per-tab memory management and instant fuzzy tab search in one toolbar popup.",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,11 +12,15 @@
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
     "@fontsource/space-grotesk": "^5.2.10",
+    "fuzzysort": "^3.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
     "vite": "^5.4.11"
+  },
+  "allowScripts": {
+    "esbuild@0.21.5": true
   }
 }

@@ -71,3 +71,32 @@ export function ChevronIcon({ expanded, ...props }) {
     </svg>
   );
 }
+
+export function SearchIcon(props) {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" {...props}>
+      <circle cx="6.5" cy="6.5" r="4" stroke="currentColor" strokeWidth="1.4" />
+      <path
+        d="M10 10l3 3"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+export function MemoryIcon(props) {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" {...props}>
+      <rect x="2" y="5" width="12" height="6" rx="0" stroke="currentColor" strokeWidth="1.3" />
+      <path
+        d="M5 5V3.5M8 5V3.5M11 5V3.5M5 11v1.5M8 11v1.5M11 11v1.5"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+      />
+      <path d="M5 7.5h1.5M9.5 7.5H11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  );
+}

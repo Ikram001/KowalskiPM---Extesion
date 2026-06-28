@@ -4,24 +4,23 @@ import {
   BADGE_ALARM_NAME,
   POPUP_PORT_NAME,
   MSG,
+  MRU_STORAGE_KEY,
+  MRU_MAX_LENGTH,
 } from "../shared/constants.js";
 import { formatBadge } from "../shared/format.js";
 
-// Last-known per-tab renderer memory, in bytes. Populated by refreshMemory().
-// Keyed by tabId. This is the only state that's expensive to compute, so it's
-// cached and shared by both the badge alarm loop and the popup's poll loop
-// rather than each maintaining its own copy.
+// ===========================================================================
+// KowalskiPM — per-tab memory tracking + badge + popup push
+// ===========================================================================
+
+// Last-known per-tab renderer memory, in bytes. Keyed by tabId.
 const memoryByTabId = new Map();
 
-// The single popup port, if one is currently connected. Its presence is
-// exactly "is the popup open" — used to gate the popup's 10-15s memory timer
-// and to know whether structural tab-event pushes have anywhere to go.
 let popupPort = null;
 let popupPollTimer = null;
 
 // ---------------------------------------------------------------------------
-// Memory polling (the only code path that calls chrome.processes with
-// includeMemory: true — kept off the hot path per the perf note in the spec).
+// Memory polling
 // ---------------------------------------------------------------------------
 
 async function refreshMemory() {
@@ -35,8 +34,8 @@ async function refreshMemory() {
         const processId = await chrome.processes.getProcessIdForTab(tab.id);
         processIdByTab.set(tab.id, processId);
       } catch {
-        // Tabs with no renderer process (e.g. chrome:// pages in some
-        // states) just won't get a memory figure this round.
+        // chrome.processes not available on stable Chrome — memory figures
+        // simply won't populate, everything else still works fine.
       }
     })
   );
@@ -63,7 +62,6 @@ async function refreshMemory() {
     }
   }
 
-  // Drop entries for tabs that no longer exist.
   const liveIds = new Set(tabs.map((t) => t.id));
   for (const id of memoryByTabId.keys()) {
     if (!liveIds.has(id)) memoryByTabId.delete(id);
@@ -71,9 +69,7 @@ async function refreshMemory() {
 }
 
 // ---------------------------------------------------------------------------
-// Snapshot building (cheap — no includeMemory calls here, just chrome.tabs
-// .query plus whatever's already in the memory cache). Safe to call on every
-// tab event for instant structural updates.
+// Snapshot building
 // ---------------------------------------------------------------------------
 
 async function buildSnapshot() {
@@ -115,14 +111,11 @@ function pushSnapshotToPopup() {
     .then((snapshot) => {
       popupPort?.postMessage({ type: MSG.SNAPSHOT, snapshot });
     })
-    .catch(() => {
-      // Port may have disconnected mid-flight; ignore.
-    });
+    .catch(() => {});
 }
 
 // ---------------------------------------------------------------------------
-// Badge: independent of the popup, driven by chrome.alarms so it survives
-// service-worker restarts.
+// Badge
 // ---------------------------------------------------------------------------
 
 async function updateBadge() {
@@ -145,9 +138,7 @@ function ensureBadgeAlarm() {
 }
 
 // ---------------------------------------------------------------------------
-// Popup wiring: chrome.action.default_popup in the manifest already opens
-// popup.html on icon click — no JS needed for that part. This just listens
-// for the popup's port connection to know when it's open.
+// Popup port wiring
 // ---------------------------------------------------------------------------
 
 chrome.runtime.onConnect.addListener((port) => {
@@ -155,8 +146,6 @@ chrome.runtime.onConnect.addListener((port) => {
 
   popupPort = port;
 
-  // Send what we have immediately, then kick off a fresh measurement so the
-  // popup isn't stuck showing minute-old (or empty) numbers on open.
   pushSnapshotToPopup();
   refreshMemory().then(pushSnapshotToPopup);
 
@@ -209,26 +198,84 @@ async function handleSuspendAll(port) {
 }
 
 // ---------------------------------------------------------------------------
-// Instant structural updates: cheap, no memory cost, pushed whenever the
-// popup is open and the tab list itself changes.
+// Instant structural updates
 // ---------------------------------------------------------------------------
 
 chrome.tabs.onCreated.addListener(() => pushSnapshotToPopup());
 chrome.tabs.onRemoved.addListener((tabId) => {
   memoryByTabId.delete(tabId);
   pushSnapshotToPopup();
+  removeFromMru(tabId);
 });
 chrome.tabs.onUpdated.addListener(() => pushSnapshotToPopup());
-chrome.tabs.onActivated.addListener(() => pushSnapshotToPopup());
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+  pushSnapshotToPopup();
+  bumpToFront(tabId);
+});
 
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// QuickSwitch — MRU tab order tracking
+// ===========================================================================
+
+async function readMru() {
+  try {
+    const result = await chrome.storage.session.get(MRU_STORAGE_KEY);
+    return Array.isArray(result[MRU_STORAGE_KEY]) ? result[MRU_STORAGE_KEY] : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writeMru(ids) {
+  try {
+    await chrome.storage.session.set({ [MRU_STORAGE_KEY]: ids.slice(0, MRU_MAX_LENGTH) });
+  } catch {
+    // Best-effort — a failed write just means the next read falls back to
+    // whatever was there before, never a crash.
+  }
+}
+
+async function bumpToFront(tabId) {
+  if (tabId == null) return;
+  const ids = await readMru();
+  const next = [tabId, ...ids.filter((id) => id !== tabId)];
+  await writeMru(next);
+}
+
+async function removeFromMru(tabId) {
+  const ids = await readMru();
+  if (!ids.includes(tabId)) return;
+  await writeMru(ids.filter((id) => id !== tabId));
+}
+
+async function seedMruIfEmpty() {
+  const ids = await readMru();
+  if (ids.length > 0) return;
+  const tabs = await chrome.tabs.query({});
+  const sorted = [...tabs].sort((a, b) => Number(b.active) - Number(a.active));
+  await writeMru(sorted.map((t) => t.id));
+}
+
+chrome.windows.onFocusChanged.addListener(async (windowId) => {
+  if (windowId === chrome.windows.WINDOW_ID_NONE) return;
+  try {
+    const [activeTab] = await chrome.tabs.query({ active: true, windowId });
+    if (activeTab) bumpToFront(activeTab.id);
+  } catch {
+    // Window may have closed mid-query; nothing to do.
+  }
+});
+
+// ===========================================================================
 // Lifecycle
-// ---------------------------------------------------------------------------
+// ===========================================================================
 
 chrome.runtime.onInstalled.addListener(() => {
   ensureBadgeAlarm();
+  seedMruIfEmpty();
 });
 
 chrome.runtime.onStartup.addListener(() => {
   ensureBadgeAlarm();
+  seedMruIfEmpty();
 });
